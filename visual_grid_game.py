@@ -21,7 +21,7 @@ class VisualGridHuntGame:
         self.height = height
         self.agent_pos = [4, 2]
         self.agent_direction = "Down"
-
+        
         # Create walls
         if custom_walls is not None:
             self.walls = set(custom_walls)
@@ -125,6 +125,15 @@ class VisualGridHuntGame:
         }
         self.agent_direction = left_turns[self.agent_direction]
 
+    def turn_right(self):
+        right_turns = {
+            "Up": "Right",
+            "Right": "Down",
+            "Down": "Left",
+            "Left": "Up",
+        }
+        self.agent_direction = right_turns[self.agent_direction]
+
     def get_forward_position(self):
         x, y = self.agent_pos
         if self.agent_direction == "Up":
@@ -150,7 +159,9 @@ class VisualGridHuntGame:
         elif action == "TurnLeft":
             self.turn_left()
             return
-
+        elif action == "TurnRight":
+            self.turn_right()
+            return
         elif action == "MoveForward":
             new_pos = self.get_forward_position()
         else:
@@ -195,24 +206,162 @@ class VisualGridHuntGame:
         End the game when all food is collected, the maximum
         number of steps is reached, or a collision occurs.
         """
-        return (
-            len(self.food_positions) == 0
-            or self.steps >= 60
-            or self.collision
-        )
+        return self.steps >= 60 or self.collision
 
 class SimpleReflexAgent:
+    """
+    A simple reflex agent that uses only the current percept.
+    It does not store any history.
+    """
 
     def sense_and_act(self, percept):
         if percept["food_here"]:
             return "Suck"
-
         elif percept["wall_ahead"]:
             return "TurnLeft"
-
         else:
             return "MoveForward"
 
+
+class ModelBasedAgent:
+
+    def __init__(self):
+        self.current_position = (4, 2)
+        self.direction = "Down"
+
+        self.visited_cells = {(4, 2)}
+        self.last_action = None
+        self.previous_percepts = []
+        self.repeated_states = {}
+
+    def update_internal_state(self, percept):
+        # Record the current percept
+        self.previous_percepts.append(percept.copy())
+
+        # Update estimated position or direction
+        # using the previous action
+        if self.last_action == "MoveForward":
+            x, y = self.current_position
+
+            if self.direction == "Up":
+                self.current_position = (x, y + 1)
+
+            elif self.direction == "Down":
+                self.current_position = (x, y - 1)
+
+            elif self.direction == "Left":
+                self.current_position = (x - 1, y)
+
+            elif self.direction == "Right":
+                self.current_position = (x + 1, y)
+
+            self.visited_cells.add(self.current_position)
+
+        elif self.last_action == "TurnLeft":
+            left_turns = {
+                "Up": "Left",
+                "Left": "Down",
+                "Down": "Right",
+                "Right": "Up"
+            }
+
+            self.direction = left_turns[self.direction]
+
+        elif self.last_action == "TurnRight":
+            right_turns = {
+                "Up": "Right",
+                "Right": "Down",
+                "Down": "Left",
+                "Left": "Up"
+            }
+
+            self.direction = right_turns[self.direction]
+
+    def get_cell_ahead(self):
+        x, y = self.current_position
+
+        if self.direction == "Up":
+            return (x, y + 1)
+
+        elif self.direction == "Down":
+            return (x, y - 1)
+
+        elif self.direction == "Left":
+            return (x - 1, y)
+
+        else:
+            return (x + 1, y)
+
+    def get_left_cell(self):
+        left_turns = {
+            "Up": "Left",
+            "Left": "Down",
+            "Down": "Right",
+            "Right": "Up"
+        }
+
+        left_direction = left_turns[self.direction]
+        x, y = self.current_position
+
+        if left_direction == "Up":
+            return (x, y + 1)
+
+        elif left_direction == "Down":
+            return (x, y - 1)
+
+        elif left_direction == "Left":
+            return (x - 1, y)
+
+        else:
+            return (x + 1, y)
+
+    def sense_and_act(self, percept):
+        # Update memory first
+        self.update_internal_state(percept)
+
+        state = (
+            self.current_position,
+            self.direction,
+            percept["wall_ahead"],
+            percept["food_here"]
+        )
+
+        self.repeated_states[state] = (
+            self.repeated_states.get(state, 0) + 1
+        )
+
+        left_cell = self.get_left_cell()
+        forward_cell = self.get_cell_ahead()
+
+        # IF food is here, collect it
+        if percept["food_here"]:
+            action = "Suck"
+
+        # IF the same state repeats, choose another direction
+        elif self.repeated_states[state] > 1:
+            action = "TurnRight"
+
+        # IF wall ahead and left cell was visited, turn right
+        elif (
+            percept["wall_ahead"]
+            and left_cell in self.visited_cells
+        ):
+            action = "TurnRight"
+
+        # IF wall ahead, turn left
+        elif percept["wall_ahead"]:
+            action = "TurnLeft"
+
+        # IF forward cell was visited, turn right
+        elif forward_cell in self.visited_cells:
+            action = "TurnRight"
+
+        # Otherwise move forward
+        else:
+            action = "MoveForward"
+
+        self.last_action = action
+        return action
 class GridGameGUI:
     """
     Tkinter graphical interface for the grid environment.
@@ -239,7 +388,7 @@ class GridGameGUI:
             num_traps=num_traps,
             custom_walls=walls,
         )
-        self.agent = SimpleReflexAgent()
+        self.agent = ModelBasedAgent()
 
         max_canvas_dimension = 600
 
@@ -422,8 +571,12 @@ class GridGameGUI:
                 print(
                     f"Percept: {percept} | "
                     f"Action: {action} | "
-                    f"Facing: {self.env.agent_direction}"
+                    f"Facing: {self.env.agent_direction} | "
+                    f"Estimated position: "
+                    f"{self.agent.current_position} | "
+                    f"Visited: {self.agent.visited_cells}"
                 )
+
                 self.draw_grid()
 
                 self.label.config(
@@ -440,11 +593,6 @@ class GridGameGUI:
                 if self.env.collision:
                     end_text = (
                         "Collision! Game Over! "
-                        f"Final Score: {self.env.score}"
-                    )
-                elif len(self.env.food_positions) == 0:
-                    end_text = (
-                        "All food collected! "
                         f"Final Score: {self.env.score}"
                     )
                 else:
@@ -470,7 +618,7 @@ if __name__ == "__main__":
         root,
         width=10,
         height=10,
-        num_food=0,
+        num_food=5,
         num_opponents=0,
         num_traps=0,
         walls=u_shaped_walls
