@@ -19,8 +19,8 @@ class VisualGridHuntGame:
     ):
         self.width = width
         self.height = height
-        self.agent_pos = [0, 0]
-        self.agent_direction = "Up"
+        self.agent_pos = [4, 2]
+        self.agent_direction = "Down"
 
         # Create walls
         if custom_walls is not None:
@@ -116,63 +116,57 @@ class VisualGridHuntGame:
             "food_here": food_here,
         }
 
+    def turn_left(self):
+        left_turns = {
+            "Up": "Left",
+            "Left": "Down",
+            "Down": "Right",
+            "Right": "Up"
+        }
+        self.agent_direction = left_turns[self.agent_direction]
+
+    def get_forward_position(self):
+        x, y = self.agent_pos
+        if self.agent_direction == "Up":
+            return [x, y + 1]
+        elif self.agent_direction == "Down":
+            return [x, y - 1]
+        elif self.agent_direction == "Left":
+            return [x - 1, y]
+        else:
+            return [x + 1, y]
+
     def execute_action(self, action: str):
-        """
-        Execute one movement action for the agent.
-        """
         self.steps += 1
         self.collision = False
 
-        new_pos = list(self.agent_pos)
+        if action == "Suck":
+            current_pos = tuple(self.agent_pos)
+            if current_pos in self.food_positions:
+                self.food_positions.remove(current_pos)
+                self.score += 20
+            return
 
-        if action == "Up":
-            self.agent_direction = "Up"
-            new_pos[1] = min(self.height - 1, new_pos[1] + 1)
+        elif action == "TurnLeft":
+            self.turn_left()
+            return
 
-        elif action == "Down":
-            self.agent_direction = "Down"
-            new_pos[1] = max(0, new_pos[1] - 1)
-
-        elif action == "Left":
-            self.agent_direction = "Left"
-            new_pos[0] = max(0, new_pos[0] - 1)
-
-        elif action == "Right":
-            self.agent_direction = "Right"
-            new_pos[0] = min(self.width - 1, new_pos[0] + 1)
-
+        elif action == "MoveForward":
+            new_pos = self.get_forward_position()
         else:
             print(f"Unknown action: {action}")
             return
 
-        # Wall collision
-        if tuple(new_pos) in self.walls:
-            self.score -= 5
-            print("Wall hit! Score reduced by 5.")
+        new_x, new_y = new_pos
+        outside_grid = (
+            new_x < 0 or new_x >= self.width or
+            new_y < 0 or new_y >= self.height
+        )
+
+        if outside_grid or tuple(new_pos) in self.walls:
+            print("Wall ahead. Cannot move.")
         else:
             self.agent_pos = new_pos
-
-            # Toxic trap collision
-            if tuple(self.agent_pos) in self.toxic_traps:
-                self.score -= 15
-                print("Toxic trap encountered! Score reduced by 15.")
-
-        # Food collection
-        current_pos = tuple(self.agent_pos)
-
-        if current_pos in self.food_positions:
-            self.food_positions.remove(current_pos)
-            self.score += 20
-            print("Food collected! Score increased by 20.")
-
-        # Move opponents
-        for opponent in self.opponents:
-            self.move_opponent(opponent)
-
-            if opponent == self.agent_pos:
-                self.score -= 50
-                self.collision = True
-                print("Opponent collision! Score reduced by 50.")
 
     def move_opponent(self, opponent):
         """
@@ -207,6 +201,17 @@ class VisualGridHuntGame:
             or self.collision
         )
 
+class SimpleReflexAgent:
+
+    def sense_and_act(self, percept):
+        if percept["food_here"]:
+            return "Suck"
+
+        elif percept["wall_ahead"]:
+            return "TurnLeft"
+
+        else:
+            return "MoveForward"
 
 class GridGameGUI:
     """
@@ -234,6 +239,7 @@ class GridGameGUI:
             num_traps=num_traps,
             custom_walls=walls,
         )
+        self.agent = SimpleReflexAgent()
 
         max_canvas_dimension = 600
 
@@ -408,17 +414,16 @@ class GridGameGUI:
 
         def step():
             if not self.env.is_done():
-                action = random.choice(["Up", "Down", "Left", "Right"])
+                percept = self.env.get_percept()
+                action = self.agent.sense_and_act(percept)
                 self.env.execute_action(action)
                 percept = self.env.get_percept()
 
                 print(
+                    f"Percept: {percept} | "
                     f"Action: {action} | "
-                    f"Facing: {self.env.agent_direction} | "
-                    f"Wall ahead: {percept['wall_ahead']} | "
-                    f"Food here: {percept['food_here']}"
+                    f"Facing: {self.env.agent_direction}"
                 )
-
                 self.draw_grid()
 
                 self.label.config(
@@ -452,18 +457,23 @@ class GridGameGUI:
                 self.start_button.config(state="normal")
 
         step()
-
+u_shaped_walls = {
+    (2, 1), (2, 2), (2, 3), (2, 4), (2, 5),
+    (3, 1), (4, 1), (5, 1), (6, 1),
+    (6, 2), (6, 3), (6, 4), (6, 5)
+}
 
 if __name__ == "__main__":
     root = tk.Tk()
 
     app = GridGameGUI(
         root,
-        width=12,
-        height=12,
-        num_food=15,
-        num_opponents=2,
-        num_traps=4,
+        width=10,
+        height=10,
+        num_food=0,
+        num_opponents=0,
+        num_traps=0,
+        walls=u_shaped_walls
     )
 
     root.mainloop()
