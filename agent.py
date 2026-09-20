@@ -13,6 +13,7 @@ class GreedyGridAgent:
 
 from collections import deque
 import heapq
+import math
 
 
 class SearchAgent:
@@ -29,7 +30,7 @@ class SearchAgent:
 
     def __init__(self):
         self.plan = []
-        self.active_algo = 'UCS'
+        self.active_algo = 'AStar'
 
         # The percept does not include the agent's position or heading,
         # so the agent tracks them itself (same as ModelBasedAgent).
@@ -93,18 +94,23 @@ class SearchAgent:
             x, y = self.current_position
             goal = min(all_food, key=lambda f: abs(f[0] - x) + abs(f[1] - y))
 
-            search = {
-                'BFS': self.bfs_search,
-                'DFS': self.dfs_search,
-                'UCS': self.ucs_search,
-            }[self.active_algo]
-
-            directions = search(
+            args = (
                 self.current_position,
                 goal,
                 percept["walls"],
                 percept["grid_size"],
             )
+
+            if self.active_algo == 'BFS':
+                directions = self.bfs_search(*args)
+            elif self.active_algo == 'DFS':
+                directions = self.dfs_search(*args)
+            elif self.active_algo == 'UCS':
+                directions = self.ucs_search(*args)
+            elif self.active_algo == 'AStar':
+                directions = self.astar_search(*args, heuristic_type='manhattan')
+            else:
+                raise ValueError(f"Unknown algorithm: {self.active_algo}")
 
             # The plan ends with "Suck" to collect the pellet on arrival
             self.plan = self.directions_to_actions(directions) + ["Suck"]
@@ -147,6 +153,14 @@ class SearchAgent:
 
         path.reverse()
         return path
+
+    def manhattan_distance(self, pos, goal):
+        """h(n) = |x1 - x2| + |y1 - y2|"""
+        return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+    def euclidean_distance(self, pos, goal):
+        """h(n) = sqrt((x1 - x2)^2 + (y1 - y2)^2)"""
+        return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
 
     def bfs_search(self, start, goal, walls, grid_size):
         """Breadth-First Search: FIFO queue, explores shallowest nodes first."""
@@ -235,5 +249,43 @@ class SearchAgent:
                     cost_so_far[next_state] = new_cost
                     parents[next_state] = (state, action)
                     heapq.heappush(frontier, (new_cost, next_state))
+
+        return []
+
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+        """A* Search: priority queue ordered by f(n) = g(n) + h(n)."""
+        walls = set(walls)
+        start_pos = tuple(start_pos)
+        goal_pos = tuple(goal_pos)
+
+        if heuristic_type == 'euclidean':
+            heuristic = self.euclidean_distance
+        else:
+            heuristic = self.manhattan_distance
+
+        # Each entry is (f_cost, g_cost, current_pos, path_taken)
+        frontier = []
+        reached_states = set()
+
+        g_start = 0
+        h_start = heuristic(start_pos, goal_pos)
+        heapq.heappush(frontier, (g_start + h_start, g_start, start_pos, []))
+
+        while frontier:
+            f_cost, g_cost, current_pos, path_taken = heapq.heappop(frontier)
+
+            if current_pos == goal_pos:
+                return path_taken
+
+            if current_pos in reached_states:
+                continue
+            reached_states.add(current_pos)
+
+            for action, neighbor in self.get_successors(current_pos, walls, grid_size):
+                if neighbor not in reached_states:
+                    g_new = g_cost + 1
+                    h_new = heuristic(neighbor, goal_pos)
+                    f_new = g_new + h_new
+                    heapq.heappush(frontier, (f_new, g_new, neighbor, path_taken + [action]))
 
         return []
