@@ -1,5 +1,6 @@
 import random
 import tkinter as tk
+from agent import SearchAgent
 
 
 class VisualGridHuntGame:
@@ -114,6 +115,9 @@ class VisualGridHuntGame:
         return {
             "wall_ahead": wall_ahead,
             "food_here": food_here,
+            "grid_size": (self.width, self.height),
+            "walls": list(self.walls),
+            "all_food": list(self.food_positions),
         }
 
     def turn_left(self):
@@ -388,7 +392,7 @@ class GridGameGUI:
             num_traps=num_traps,
             custom_walls=walls,
         )
-        self.agent = ModelBasedAgent()
+        self.agent = SearchAgent()
 
         max_canvas_dimension = 600
 
