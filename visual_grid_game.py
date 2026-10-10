@@ -628,4 +628,12 @@ if __name__ == "__main__":
         walls=u_shaped_walls
     )
 
+    # Lab 07 demo: fixed food next to the KB tiles so the detour is visible.
+    # (1, 0) is blocked by the KB (Retreat); (0, 1) is allowed (SafeToEngage).
+    # Set KB_DEMO = False to go back to random food.
+    KB_DEMO = True
+    if KB_DEMO:
+        app.env.food_positions = {(2, 0), (0, 1)}
+        app.draw_grid()
+
     root.mainloop()

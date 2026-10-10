@@ -14,7 +14,7 @@ class GreedyGridAgent:
 from collections import deque
 import heapq
 import math
-
+from logic_engine import KnowledgeBase
 
 class SearchAgent:
     # Direction -> (dx, dy). Matches the environment: "Up" increases y.
@@ -31,6 +31,13 @@ class SearchAgent:
     def __init__(self):
         self.plan = []
         self.active_algo = 'AStar'
+
+        # Knowledge Base with the game's safety rules
+        self.kb = KnowledgeBase()
+        # Rule 1: TargetVisible ∧ HasDust ⇒ SafeToEngage
+        self.kb.tell_rule(['TargetVisible', 'HasDust'], 'SafeToEngage')
+        # Rule 2: SafeToEngage ∧ BloodseekerMissing ⇒ Retreat
+        self.kb.tell_rule(['SafeToEngage', 'BloodseekerMissing'], 'Retreat')
 
         # The percept does not include the agent's position or heading,
         # so the agent tracks them itself (same as ModelBasedAgent).
@@ -101,6 +108,12 @@ class SearchAgent:
                 percept["grid_size"],
             )
 
+            # Sample per-tile facts for the Knowledge Base
+            tile_facts = {
+                (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],  # deduces Retreat: blocked
+                (0, 1): ['TargetVisible', 'HasDust'],                        # SafeToEngage only: allowed
+            }
+
             if self.active_algo == 'BFS':
                 directions = self.bfs_search(*args)
             elif self.active_algo == 'DFS':
@@ -108,7 +121,7 @@ class SearchAgent:
             elif self.active_algo == 'UCS':
                 directions = self.ucs_search(*args)
             elif self.active_algo == 'AStar':
-                directions = self.astar_search(*args, heuristic_type='manhattan')
+                directions = self.astar_search(*args, heuristic_type='manhattan', tile_facts=tile_facts)
             else:
                 raise ValueError(f"Unknown algorithm: {self.active_algo}")
 
@@ -252,11 +265,12 @@ class SearchAgent:
 
         return []
 
-    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan'):
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan', tile_facts=None):
         """A* Search: priority queue ordered by f(n) = g(n) + h(n)."""
         walls = set(walls)
         start_pos = tuple(start_pos)
         goal_pos = tuple(goal_pos)
+        tile_facts = tile_facts or {}
 
         if heuristic_type == 'euclidean':
             heuristic = self.euclidean_distance
@@ -282,10 +296,21 @@ class SearchAgent:
             reached_states.add(current_pos)
 
             for action, neighbor in self.get_successors(current_pos, walls, grid_size):
+                # Reachable: get_successors already removed walls and off-grid cells.
+                # Feasible: ask the KB whether this tile is safe to enter.
+                self.kb.clear_facts()
+                for fact in tile_facts.get(neighbor, []):
+                    self.kb.tell_fact(fact)
+                self.kb.forward_chain()
+
+                if 'Retreat' in self.kb.facts:
+                    continue  # Infeasible tile: skip it even though it is reachable
+
                 if neighbor not in reached_states:
                     g_new = g_cost + 1
                     h_new = heuristic(neighbor, goal_pos)
                     f_new = g_new + h_new
                     heapq.heappush(frontier, (f_new, g_new, neighbor, path_taken + [action]))
+
 
         return []
